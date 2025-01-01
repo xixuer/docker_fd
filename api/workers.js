@@ -88,117 +88,135 @@ async function nginx() {
 
 // 修改为Vercel的API处理函数
 export default async function handler(request) {
-  const env = process.env; // 使用process.env替代Cloudflare的env
-  const ctx = {};
+  try {
+    const env = process.env; // 使用process.env替代Cloudflare的env
+    const ctx = {};
 
-  const getReqHeader = (key) => request.headers.get(key);
+    const getReqHeader = (key) => request.headers.get(key);
 
-  let url = new URL(request.url);
-  const userAgentHeader = request.headers.get('User-Agent');
-  const userAgent = userAgentHeader ? userAgentHeader.toLowerCase() : "null";
-  if (env.UA) 屏蔽爬虫UA = 屏蔽爬虫UA.concat(await ADD(env.UA));
-  workers_url = `https://${url.hostname}`;
-  const pathname = url.pathname;
-  const hostname = url.searchParams.get('hubhost') || url.hostname;
-  const hostTop = hostname.split('.')[0];
-  const checkHost = routeByHosts(hostTop);
-  hub_host = checkHost[0];
-  const fakePage = checkHost[1];
-  console.log(`域名头部: ${hostTop}\n反代地址: ${hub_host}\n伪装首页: ${fakePage}`);
-  const isUuid = pathname.split('/')[1] ? isUUID(pathname.split('/')[1].split('/')[0]) : false;
+    let url = new URL(request.url);
+    const userAgentHeader = request.headers.get('User-Agent');
+    const userAgent = userAgentHeader ? userAgentHeader.toLowerCase() : "null";
+    
+    // 安全地处理UA环境变量
+    let additionalUA = [];
+    if (env.UA) {
+      try {
+        additionalUA = JSON.parse(env.UA);
+      } catch (e) {
+        console.error('Error parsing UA env:', e);
+      }
+    }
+    屏蔽爬虫UA = [...屏蔽爬虫UA, ...additionalUA];
 
-  if (屏蔽爬虫UA.some(fxxk => userAgent.includes(fxxk)) && 屏蔽爬虫UA.length > 0) {
-    return new Response(await nginx(), {
-      headers: {
-        'Content-Type': 'text/html; charset=UTF-8',
-      },
-    });
-  }
+    // 设置workers_url，使用request.headers.host来获取当前域名
+    workers_url = `https://${request.headers.get('host') || 'do.xixuer.cn'}`;
+    
+    const pathname = url.pathname;
+    const hostname = url.searchParams.get('hubhost') || url.hostname;
+    const hostTop = hostname.split('.')[0];
+    const checkHost = routeByHosts(hostTop);
+    hub_host = checkHost[0];
+    const fakePage = checkHost[1];
+    console.log(`域名头部: ${hostTop}\n反代地址: ${hub_host}\n伪装首页: ${fakePage}`);
+    const isUuid = pathname.split('/')[1] ? isUUID(pathname.split('/')[1].split('/')[0]) : false;
 
-  const conditions = [
-    isUuid,
-    pathname.includes('/_'),
-    pathname.includes('/r'),
-    pathname.includes('/v2/user'),
-    pathname.includes('/v2/orgs'),
-    pathname.includes('/v2/_catalog'),
-    pathname.includes('/v2/categories'),
-    pathname.includes('/v2/feature-flags'),
-    pathname.includes('search'),
-    pathname.includes('source'),
-    pathname === '/',
-    pathname === '/favicon.ico',
-    pathname === '/auth/profile',
-  ];
-
-  if (conditions.some(condition => condition) && (fakePage === true || hostTop == 'docker')) {
-    if (env.URL302) {
-      return Response.redirect(env.URL302, 302);
-    } else if (env.URL) {
-      if (env.URL.toLowerCase() == 'nginx') {
-        return new Response(await nginx(), {
-          headers: {
-            'Content-Type': 'text/html; charset=UTF-8',
-          },
-        });
-      } else return fetch(new Request(env.URL, request));
+    if (屏蔽爬虫UA.some(fxxk => userAgent.includes(fxxk)) && 屏蔽爬虫UA.length > 0) {
+      return new Response(await nginx(), {
+        headers: {
+          'Content-Type': 'text/html; charset=UTF-8',
+        },
+      });
     }
 
-    const newUrl = new URL("https://registry.hub.docker.com" + pathname + url.search);
-    const headers = new Headers(request.headers);
-    headers.set('Host', 'registry.hub.docker.com');
+    const conditions = [
+      isUuid,
+      pathname.includes('/_'),
+      pathname.includes('/r'),
+      pathname.includes('/v2/user'),
+      pathname.includes('/v2/orgs'),
+      pathname.includes('/v2/_catalog'),
+      pathname.includes('/v2/categories'),
+      pathname.includes('/v2/feature-flags'),
+      pathname.includes('search'),
+      pathname.includes('source'),
+      pathname === '/',
+      pathname === '/favicon.ico',
+      pathname === '/auth/profile',
+    ];
 
-    const newRequest = new Request(newUrl, {
-      method: request.method,
-      headers: headers,
-      body: request.method !== 'GET' && request.method !== 'HEAD' ? await request.blob() : null,
-      redirect: 'follow'
-    });
+    if (conditions.some(condition => condition) && (fakePage === true || hostTop == 'docker')) {
+      if (env.URL302) {
+        return Response.redirect(env.URL302, 302);
+      } else if (env.URL) {
+        if (env.URL.toLowerCase() == 'nginx') {
+          return new Response(await nginx(), {
+            headers: {
+              'Content-Type': 'text/html; charset=UTF-8',
+            },
+          });
+        } else return fetch(new Request(env.URL, request));
+      }
 
-    return fetch(newRequest);
-  }
+      const newUrl = new URL("https://registry.hub.docker.com" + pathname + url.search);
+      const headers = new Headers(request.headers);
+      headers.set('Host', 'registry.hub.docker.com');
 
-  if (!/%2F/.test(url.search) && /%3A/.test(url.toString())) {
-    let modifiedUrl = url.toString().replace(/%3A(?=.*?&)/, '%3Alibrary%2F');
-    url = new URL(modifiedUrl);
-    console.log(`handle_url: ${url}`)
-  }
+      const newRequest = new Request(newUrl, {
+        method: request.method,
+        headers: headers,
+        body: request.method !== 'GET' && request.method !== 'HEAD' ? await request.blob() : null,
+        redirect: 'follow'
+      });
 
-  if (url.pathname.includes('/token')) {
-    let token_parameter = {
+      return fetch(newRequest);
+    }
+
+    if (!/%2F/.test(url.search) && /%3A/.test(url.toString())) {
+      let modifiedUrl = url.toString().replace(/%3A(?=.*?&)/, '%3Alibrary%2F');
+      url = new URL(modifiedUrl);
+      console.log(`handle_url: ${url}`)
+    }
+
+    if (url.pathname.includes('/token')) {
+      let token_parameter = {
+        headers: {
+          'Host': 'auth.docker.io',
+          'User-Agent': getReqHeader("User-Agent"),
+          'Accept': getReqHeader("Accept"),
+          'Accept-Language': getReqHeader("Accept-Language"),
+          'Accept-Encoding': getReqHeader("Accept-Encoding"),
+          'Connection': 'keep-alive',
+          'Cache-Control': 'max-age=0'
+        }
+      };
+      let token_url = auth_url + url.pathname + url.search
+      return fetch(new Request(token_url, request), token_parameter)
+    }
+
+    if (request.method === 'OPTIONS') {
+      return new Response(null, PREFLIGHT_INIT)
+    }
+
+    const parameter = {
       headers: {
-        'Host': 'auth.docker.io',
-        'User-Agent': getReqHeader("User-Agent"),
-        'Accept': getReqHeader("Accept"),
-        'Accept-Language': getReqHeader("Accept-Language"),
-        'Accept-Encoding': getReqHeader("Accept-Encoding"),
+        'Host': hub_host,
+        'User-Agent': getReqHeader('User-Agent'),
+        'Accept': getReqHeader('Accept'),
+        'Accept-Language': getReqHeader('Accept-Language'),
+        'Accept-Encoding': getReqHeader('Accept-Encoding'),
         'Connection': 'keep-alive',
         'Cache-Control': 'max-age=0'
       }
     };
-    let token_url = auth_url + url.pathname + url.search
-    return fetch(new Request(token_url, request), token_parameter)
+
+    url.host = hub_host;
+    url.protocol = 'https';
+    return fetch(new Request(url, request), parameter);
+  } catch (e) {
+    console.error('Error handling request:', e);
+    return new Response('Internal Server Error', { status: 500 });
   }
-
-  if (request.method === 'OPTIONS') {
-    return new Response(null, PREFLIGHT_INIT)
-  }
-
-  const parameter = {
-    headers: {
-      'Host': hub_host,
-      'User-Agent': getReqHeader('User-Agent'),
-      'Accept': getReqHeader('Accept'),
-      'Accept-Language': getReqHeader('Accept-Language'),
-      'Accept-Encoding': getReqHeader('Accept-Encoding'),
-      'Connection': 'keep-alive',
-      'Cache-Control': 'max-age=0'
-    }
-  };
-
-  url.host = hub_host;
-  url.protocol = 'https';
-  return fetch(new Request(url, request), parameter);
 }
 
 async function ADD(envadd) {
