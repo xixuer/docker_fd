@@ -94,7 +94,19 @@ export default async function handler(request) {
 
     const getReqHeader = (key) => request.headers.get(key);
 
-    let url = new URL(request.url);
+    // 修复 URL 构造问题
+    let url;
+    try {
+      // 确保有完整的 URL
+      const host = request.headers.get('host') || 'do.xixuer.cn';
+      const protocol = request.headers.get('x-forwarded-proto') || 'https';
+      const fullUrl = `${protocol}://${host}${request.url}`;
+      url = new URL(fullUrl);
+    } catch (e) {
+      console.error('Error constructing URL:', e);
+      return new Response('Invalid URL', { status: 400 });
+    }
+
     const userAgentHeader = request.headers.get('User-Agent');
     const userAgent = userAgentHeader ? userAgentHeader.toLowerCase() : "null";
     
@@ -109,7 +121,7 @@ export default async function handler(request) {
     }
     屏蔽爬虫UA = [...屏蔽爬虫UA, ...additionalUA];
 
-    // 设置workers_url，使用request.headers.host来获取当前域名
+    // 设置workers_url
     workers_url = `https://${request.headers.get('host') || 'do.xixuer.cn'}`;
     
     const pathname = url.pathname;
